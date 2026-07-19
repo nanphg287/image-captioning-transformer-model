@@ -27,6 +27,8 @@ RANDOM_SEED = 42
 def get_device() -> torch.device:
     if torch.cuda.is_available():
         return torch.device("cuda:0")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
 
     return torch.device("cpu")
 
@@ -185,7 +187,7 @@ def main() -> None:
     # --------------------------------------------------
     # Dataset và device.
     # --------------------------------------------------
-    # prepare_training_data()
+    prepare_training_data()
     device = get_device()
 
     print(f"Device: {device}")

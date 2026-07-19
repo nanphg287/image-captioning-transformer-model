@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import torch
@@ -25,6 +26,8 @@ IMAGE_PATH = (
 def get_device() -> torch.device:
     if torch.cuda.is_available():
         return torch.device("cuda:0")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
     return torch.device("cpu")
 
 
@@ -172,17 +175,20 @@ def main() -> None:
 
     print(f"Device: {device}")
 
+    # Nhận đường dẫn ảnh từ tham số dòng lệnh nếu có, mặc định dùng IMAGE_PATH
+    image_path = sys.argv[1] if len(sys.argv) > 1 else IMAGE_PATH
+
     vocabulary = load_vocabulary()
 
     model = load_model(checkpoint_path=CHECKPOINT_PATH, vocabulary=vocabulary, device=device)
 
-    image_tensor = preprocess_image(image_path=IMAGE_PATH, device=device)
+    image_tensor = preprocess_image(image_path=image_path, device=device)
 
     caption, token_ids = generate_caption(model=model, image_tensor=image_tensor, vocabulary=vocabulary,
                                           max_length=Config.max_caption_length)
 
     print("\n===== INFERENCE RESULT =====")
-    print(f"Image: {IMAGE_PATH}")
+    print(f"Image: {image_path}")
     print(f"Token IDs: {token_ids}")
     print(f"Caption: {caption}")
 

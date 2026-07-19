@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import ssl
 import torch
 import torch.nn as nn
+from torchvision.models import resnet50, ResNet50_Weights
 
-from data.patching_embedding import PatchEmbedding
-from data.positional_embedding import PositionalEmbedding
+# Bypass SSL verification for torchvision model download
+ssl._create_default_https_context = ssl._create_unverified_context
+
 from models.language_modeling_head import LanguageModelingHead
 from models.text_embedding import TextEmbedding
 from models.text_transformer_decoder import TextTransformerDecoder
-from models.vision_transformer_encoder import VisionTransformerEncoder
 
 
 class ImageCaptioningTransformer(nn.Module):
@@ -43,25 +45,23 @@ class ImageCaptioningTransformer(nn.Module):
             num_encoder_layers: int = 4,
             num_decoder_layers: int = 4,
             dropout: float = 0.1,
-            layer_norm_eps: float = 1e-6
+            layer_norm_eps: float = 1e-6,
+            freeze_backbone: bool = True
     ):
         super().__init__()
 
-        patches_per_side = image_size // patch_size
-        num_patches = patches_per_side ** 2
+        # Khởi tạo backbone ResNet-50 pre-trained
+        resnet = resnet50(weights=ResNet50_Weights.DEFAULT)
+        # Bỏ đi layer global average pooling và fully connected ở cuối
+        self.backbone = nn.Sequential(*list(resnet.children())[:-2])
 
-        self.patch_embedding = PatchEmbedding(patch_size=patch_size, in_channels=3, d_model=d_model)
-        self.image_positional_embedding = PositionalEmbedding(num_patches=num_patches, d_model=d_model)
-        self.vision_transformer_encoder = (
-            VisionTransformerEncoder(
-                d_model=d_model,
-                num_heads=num_heads,
-                d_ff=d_ff,
-                num_layers=num_encoder_layers,
-                dropout=dropout,
-                layer_norm_eps=layer_norm_eps
-            )
-        )
+        # Bộ chuyển đổi số kênh đặc trưng của ResNet (2048) về d_model (512)
+        self.feature_projection = nn.Linear(2048, d_model)
+
+        # Đóng băng trọng số của backbone nếu có yêu cầu
+        if freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
 
         self.text_embedding = TextEmbedding(
             vocabulary_size=vocabulary_size,
@@ -86,15 +86,23 @@ class ImageCaptioningTransformer(nn.Module):
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
         """
-        images: [B, 3, image_size, image_size]
-        output: [B, num_patches, d_model]
+        images: [B, 3, image_size, image_size] -> [B, 3, 224, 224]
+        output: [B, 49, d_model]
         """
 
-        patch_tokens = self.patch_embedding(images)
-        image_tokens = self.image_positional_embedding(patch_tokens)
-        visual_features = self.vision_transformer_encoder(image_tokens)
+        # Trích xuất đặc trưng qua ResNet-50 -> [B, 2048, 7, 7]
+        visual_features = self.backbone(images)
 
-        return visual_features
+        # Trải phẳng chiều rộng/cao -> [B, 2048, 49]
+        visual_features = visual_features.flatten(2)
+
+        # Đảo chiều để chuyển thành dạng chuỗi -> [B, 49, 2048]
+        visual_features = visual_features.transpose(1, 2)
+
+        # Ánh xạ từ 2048 về d_model (512) -> [B, 49, d_model]
+        projected_features = self.feature_projection(visual_features)
+
+        return projected_features
 
     def decode_captions(
             self,

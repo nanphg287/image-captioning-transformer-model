@@ -62,7 +62,7 @@ class Config:
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
     max_grad_norm = 1.0
-    num_epochs = 10
+    num_epochs = 30
     eps: float = 1e-6
     gradient_clip_norm: float = 1.0
     num_workers: int = 4
@@ -71,6 +71,6 @@ class Config:
 
     # Checkpoint
     checkpoint_dir: str = "checkpoints"
-    checkpoint_path: str = "checkpoints/image_captioning_epoch_010.pt"
+    checkpoint_path: str = "checkpoints/image_captioning_epoch_030.pt"
     log_interval: int = 20
 

@@ -48,7 +48,7 @@ class TestRoleCComponents(unittest.TestCase):
 
         # Test decode (keep special tokens)
         decoded_with_special = self.vocab.decode(encoded, skip_special_tokens=False)
-        self.assertEqual(decoded_with_special, "a girl sits in a pool")
+        self.assertEqual(decoded_with_special, "<BOS> a girl sits in a pool")
 
     def test_collator(self):
         collator = ImageCaptionCollator(pad_token_id=self.vocab.pad_token_id)
@@ -110,6 +110,36 @@ class TestRoleCComponents(unittest.TestCase):
         # Ensure padding token embedding is scaled correctly or remains deterministic
         # (Though dropout is 0.0, we want to check that it runs without errors)
         self.assertFalse(torch.isnan(embeddings).any())
+
+    def test_image_captioning_transformer(self):
+        from models.image_captioning_transformer import ImageCaptioningTransformer
+        model = ImageCaptioningTransformer(
+            image_size=224,
+            patch_size=16,
+            vocabulary_size=len(self.vocab),
+            max_caption_length=10,
+            pad_token_id=self.vocab.pad_token_id,
+            d_model=64,
+            num_heads=2,
+            d_ff=128,
+            num_encoder_layers=2,
+            num_decoder_layers=2,
+            dropout=0.0
+        )
+        
+        # Batch of images: [B, 3, 224, 224]
+        images = torch.randn(2, 3, 224, 224)
+        
+        # Batch of caption ids: [B, seq_len]
+        caption_ids = torch.tensor([
+            [1, 4, 5, 2],
+            [1, 4, 8, 2]
+        ])
+        
+        logits = model(images, caption_ids)
+        
+        # Kích thước của logits đầu ra phải là [Batch_Size, seq_len, vocabulary_size] -> [2, 4, len(vocab)]
+        self.assertEqual(logits.shape, (2, 4, len(self.vocab)))
 
 if __name__ == "__main__":
     unittest.main()
