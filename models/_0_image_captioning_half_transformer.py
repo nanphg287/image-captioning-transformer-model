@@ -9,7 +9,7 @@ from models._2_text_embedding import TextEmbedding
 from models._3_0_text_transformer_decoder import TextTransformerDecoder
 
 
-class ImageCaptioningTransformer(nn.Module):
+class ImageCaptioningHalfTransformer(nn.Module):
     def __init__(
             self,
             image_size: int,

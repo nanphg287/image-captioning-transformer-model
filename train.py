@@ -14,7 +14,8 @@ from data.collate import ImageCaptionCollator
 from data.image_caption_dataset import ImageCaptionDataset
 from data.tokenizer import CaptionTokenizer
 from data.vocabulary import Vocabulary
-from models._0_image_captioning_half_transformer import ImageCaptioningTransformer
+from models._0_image_captioning_half_transformer import ImageCaptioningHalfTransformer
+from models._0_image_captioning_transformer import ImageCaptioningTransformer
 
 NUM_WORKERS = 4
 RANDOM_SEED = 42
@@ -160,6 +161,78 @@ def save_checkpoint(
     return checkpoint_path
 
 
+def create_validation_dataloader(
+        device: torch.device,
+        vocabulary: Vocabulary
+) -> DataLoader:
+    validation_dataset = ImageCaptionDataset(
+        json_path=Config.validation_data_file,
+        vocabulary=vocabulary,
+        max_caption_length=Config.max_caption_length
+    )
+
+    collator = ImageCaptionCollator(pad_token_id=vocabulary.pad_token_id)
+
+    return DataLoader(
+        dataset=validation_dataset,
+        batch_size=Config.batch_size,
+        shuffle=False,
+        num_workers=NUM_WORKERS,
+        pin_memory=device.type == "cuda",
+        persistent_workers=NUM_WORKERS > 0,
+        drop_last=False,
+        collate_fn=collator
+    )
+
+
+@torch.inference_mode()
+def validate_one_epoch(
+        model: ImageCaptioningTransformer,
+        validation_dataloader: DataLoader,
+        criterion: nn.Module,
+        device: torch.device,
+        pad_token_id: int
+) -> float:
+    model.eval()
+
+    total_loss = 0.0
+    total_valid_tokens = 0
+
+    for batch in validation_dataloader:
+        images = batch["images"].to(device=device, non_blocking=True)
+
+        caption_ids = batch["caption_ids"].to(device=device, non_blocking=True)
+
+        caption_padding_mask = batch[
+            "caption_padding_mask"
+        ].to(
+            device=device,
+            non_blocking=True
+        )
+
+        decoder_input_ids = caption_ids[:, :-1]
+        decoder_target_ids = caption_ids[:, 1:]
+        decoder_padding_mask = caption_padding_mask[:, :-1]
+
+        logits = model(images=images, decoder_input_ids=decoder_input_ids, decoder_padding_mask=decoder_padding_mask)
+
+        vocabulary_size = logits.shape[-1]
+
+        loss = criterion(logits.reshape(-1, vocabulary_size), decoder_target_ids.reshape(-1))
+
+        valid_token_count = (decoder_target_ids != pad_token_id).sum().item()
+
+        total_loss += loss.item() * valid_token_count
+        total_valid_tokens += valid_token_count
+
+    if total_valid_tokens == 0:
+        raise RuntimeError(
+            "Validation dataset không có token hợp lệ."
+        )
+
+    return total_loss / total_valid_tokens
+
+
 def main() -> None:
     # --------------------------------------------------
     # Random seed.
@@ -228,6 +301,13 @@ def main() -> None:
     # --------------------------------------------------
     print("\n===== BẮT ĐẦU HUẤN LUYỆN =====")
 
+    validation_dataloader = create_validation_dataloader(
+        device=device,
+        vocabulary=vocabulary
+    )
+
+    best_validation_loss = float("inf")
+
     for epoch in range(1, Config.num_epochs + 1):
         average_loss = train_one_epoch(
             model=model,
@@ -239,15 +319,27 @@ def main() -> None:
             epoch=epoch
         )
 
-        checkpoint_path = save_checkpoint(
+        validation_loss = validate_one_epoch(
             model=model,
-            optimizer=optimizer,
-            epoch=epoch,
-            average_loss=average_loss,
-            vocabulary_size=vocabulary_size
+            validation_dataloader=validation_dataloader,
+            criterion=criterion,
+            device=device,
+            pad_token_id=vocabulary.pad_token_id
         )
 
-        print(f"Epoch {epoch:02d} hoàn thành | Average Loss: {average_loss:.4f}")
+        checkpoint_path = ""
+        if validation_loss < best_validation_loss:
+            best_validation_loss = validation_loss
+
+            checkpoint_path = save_checkpoint(
+                model=model,
+                optimizer=optimizer,
+                epoch=epoch,
+                average_loss=validation_loss,
+                vocabulary_size=len(vocabulary)
+            )
+
+        print(f"Epoch {epoch:02d} hoàn thành | Average Loss: {average_loss:.4f} | Validation Loss: {validation_loss:.4f}")
         print(f"Checkpoint: {checkpoint_path}")
 
     print("\n===== HUẤN LUYỆN HOÀN THÀNH =====")

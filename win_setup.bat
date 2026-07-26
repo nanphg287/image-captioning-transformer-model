@@ -20,10 +20,9 @@ ECHO "Installing dependencies..."
 powershell -Command "& {Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\.venv\Scripts\Activate.ps1; python -m pip install --upgrade pip setuptools wheel; python -m pip install torch==2.2.1 torchvision==0.17.1 --index-url https://download.pytorch.org/whl/cu121; python -m pip install -r requirements.txt}"
 
 ECHO "Creating directories and files..."
-mkdir "processed\resize_image"
-echo {} > image_to_captions.json
-echo {} > test.json
-echo {} > train.json
-echo {} > vocabulary.json
+mkdir "datasets\processed\resize_image"
+echo {} > datasets\processed\image_to_captions.json
+echo {} > datasets\processed\test.json
+echo {} > datasets\processed\train.json
 
 ECHO "Setup complete."
