@@ -215,6 +215,37 @@ def resize_image() -> None:
     print(f"Đã cập nhật JSON: {MAPPING_FILE}")
 
 
+def resize_image_validate() -> None:
+    mapping_file = Path(Config.validation_data_file)
+
+    if not mapping_file.exists():
+        raise FileNotFoundError(f"Không tìm thấy file JSON: {mapping_file}")
+
+    with mapping_file.open("r", encoding="utf-8") as file:
+        image_to_captions = json.load(file)
+
+    if not isinstance(image_to_captions, dict):
+        raise ValueError("Dữ liệu trong JSON phải có dạng dictionary/object.")
+
+    print(f"Tổng số ảnh cần xử lý: {len(image_to_captions)}")
+    print(f"Số worker thread: 4")
+    print(f"Thư mục đầu ra: {Config.resize_image_dir}")
+    print("-" * 60)
+
+    success_count, failed_count = resize_images_with_threads(image_to_captions=image_to_captions)
+    temporary_file = mapping_file.with_name(f"{mapping_file.name}.tmp")
+    with temporary_file.open(mode="w", encoding="utf-8") as file:
+        json.dump(image_to_captions, file, ensure_ascii=False, indent=2)
+
+    temporary_file.replace(mapping_file)
+
+    print("\n===== KẾT QUẢ =====")
+    print(f"Tổng số ảnh: {len(image_to_captions)}")
+    print(f"Resize thành công: {success_count}")
+    print(f"Resize thất bại: {failed_count}")
+    print(f"Đã cập nhật JSON: {Config.validation_data_file}")
+
+
 def main() -> None:
     resize_image()
 
