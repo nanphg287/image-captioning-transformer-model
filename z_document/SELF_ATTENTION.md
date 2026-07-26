@@ -33,8 +33,8 @@
   * Q = $X * W_Q$
   * K = $X * W_K$
   * V = $X * W_V$
-  * Ở đây, W_Q, W_K, và W_V là các ma trận trọng số mà mô hình học được trong quá trình huấn luyện.</br></br>
-* **Bước 3**: Tính tích vô hướng của Qvới ma trận chuyển vị của K. Đây là phép nhân ma trận cho ra điểm số chú ý. Chúng ta sử dụng ma trận chuyển vị để các hình dạng được căn chỉnh chính xác cho phép nhân.
+  * Ở đây, $W_Q$, $W_K$, và $W_V$ là các ma trận trọng số mà mô hình học được trong quá trình huấn luyện.</br></br>
+* **Bước 3**: Tính tích vô hướng của Q với ma trận chuyển vị của K. Đây là phép nhân ma trận cho ra điểm số chú ý. Chúng ta sử dụng ma trận chuyển vị để các hình dạng được căn chỉnh chính xác cho phép nhân.
   * scaled_score = $\frac{Q.K^T}{\sqrt{d_k}}$ (nhân vô hướng thì cho ra 1 số)
   * Điểm số cho ta biết mức độ tương tác giữa hai token. Điểm số càng cao nghĩa là sự trùng khớp càng mạnh giữa truy vấn của token này và khóa của token kia 
   * Việc điều chỉnh tỷ lệ này được thực hiện để giữ cho các số nằm trong phạm vi ổn định, tránh việc hàm softmax tạo ra các giá trị cực đoan. Nếu không có sự điều chỉnh tỷ lệ này, độ dốc có thể trở nên rất nhỏ trong quá trình huấn luyện</br></br>

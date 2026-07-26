@@ -160,7 +160,140 @@ QUESTION
 2. Đọc file config thấy $D = 256$, số heads = 4 --> Số chiều của head = 64 (configuration khá lạ)
 3. Tại sao cần Linear Projection? Vì suy cho thực chất thứ nó làm là đổi số chiều + tính toán đơn giản? --> Gợi ý: Tác dụng learning $W$ và $b$, output vector mới đại diện cho toàn bộ 768 values, chứ không đơn lẻ intensity value của 1 pixel, etc. 
 
+## Add [CLS] Token
+
+Sau khi Patch Embedding xong thì ra được shape $[B, 196, D]$, riêng với image classification mình có một bước đặc biệt: Add thêm special *learnable* token gọi là `[CLS] Token`.
+
+Fact: CLS Token là một trick để giúp model create one global representation for classification. CLS Token này tại thời điểm Transformer ra đời chưa có, nó ra đời vào lúc BERT ra đời (NLP Transformer model), sau này ViT mượn ý tưởng này về.
+
+Tại sao gọi CLS Token là "learnable"? Vì thực tế token này không phải patch thật (vì không có ảnh ứng với patch này). Nó là một vector có shape y hệt các patch embedding khác, trong quá trình training, CLS Token vector này sẽ được update liên tục, cuối cùng nó sẽ là "summary receiver" for the whole image. Chính bản thân CLS Token là một parameters được learn trong quá trình training, nó ngang hàng với $W$ và $b$.
+
+ViT sẽ *prepend* token vào patch sequence. Vì vậy sau bước này số patch embedding tăng từ 196 --> 197 trở thành $[B, 197, D]$. Nôm na nó sẽ như này `[CLS], patch_1, patch_2, patch_3, ...`. Tại thời điểm ban đầu PyTorch random initialize CLS Token, sau này back-propagation sẽ update lại.
+
+```
+Patch embeddings: [B, 196, 768]
+CLS token:        [B, 1, 768]
+After concat:     [B, 197, 768]
+```
+
 ## Add Positional embedding
 
+Tại thời điểm này ta có `[CLS], patch_1, patch_2, patch_3, ..., patch_196`. Mặc dù mỗi patch đã chứa dữ liệu, nhưng không có dữ liệu về vị trí của patch trong bức ảnh (trên dưới trái phải, ...).
 
+--> ViT add thêm Positional embedding (tất nhiên same shape)
 
+```
+Token embeddings:      [B, 197, D]
+Positional embeddings: [1, 197, D]
+Result:                [B, 197, D]
+```
+
+Bởi vì trong Computer Vision thì: Mũi trên Miệng vs Miệng trên Mũi nó rất khác nhau --> Vị trí của một patch trong bức ảnh rất quan trọng.
+
+A positional embedding is a learnable vector assigned to each position in the sequence.
+
+Ví dụ cụ thể: For ViT with [CLS]:
+
+```
+Number of tokens = 197
+Embedding dimension = 768
+```
+
+So positional embedding has shape: [1, 197, 768], tức là
+
+```
+position_embedding_for_CLS      = vector of 768 numbers
+position_embedding_for_patch_1  = vector of 768 numbers
+position_embedding_for_patch_2  = vector of 768 numbers
+...
+position_embedding_for_patch_196 = vector of 768 numbers
+```
+
+Positional Embedding KHÔNG làm thay đổi shape của output, lí do vì nó là cộng matrix (khác với CLS là concat).
+
+Fact: Có nhiều biến thể, kiểu cộng Positional Embedding với Patch Embedding chỉ là một cách phổ biến thôi. Còn một cách concat nữa cũng có trong thực tế, nhưng hiếm.
+
+Does [CLS] also get positional embedding? 
+
+## Transformer Encoder Block
+
+[Transformers for Vision](https://d2l.ai/chapter_attention-mechanisms-and-transformers/vision-transformer.html)
+
+Sau khi Positional Embeddings thì ảnh được feed qua hàng loạt Transformer Encoder Block. Thông thường một Encoder Block sẽ chứa các thành phần sau
+
+```
+1. Layer Normalization
+2. Multi-Head Self-Attention
+3. Residual Connection
+4. Layer Normalization
+5. MLP / Feed-Forward Network
+6. Residual Connection
+```
+
+Biểu diễn đơn giản hơn thì nó như này
+
+```
+x = x + MultiHeadSelfAttention(LayerNorm(x))
+x = x + MLP(LayerNorm(x))
+```
+
+Mặc dù một Encoder Block chứa rất nhiều layer, nhưng thực tế nó chỉ có 2 nhiệm vụ chính
+
+1. **Self-attention**: patches talk to each other
+2. **MLP/Feed-forward**: each patch thinks/processes its own updated information.
+
+Còn lại Layer Normalization và Residual Connection chỉ có tác dụng stablize training và preserve information thôi.
+
+| Component | Simple meaning |
+| :--- | :--- |
+| LayerNorm | Clean/stabilize token values |
+| Multi-Head Self-Attention | Let tokens communicate |
+| Residual Connection | Keep old information while adding new information |
+| MLP | Further process each token individually |
+
+### LayerNorm
+
+[Transformer Architecture](https://waylandz.com/llm-transformer-book/)
+
+LayerNorm means **normalize each token vector**. Nó chính là re-scale 768 values trong vector về một khoảng giá trị nào đó. Bởi vì có thể trong vector đôi khi gặp những value rất bé/rất lớn --> Gây ra neuron network mất tính ổn định.
+
+Phương pháp normalize có nhiều, ví dụ: Min-max scaling, z-score normalization, etc. 
+
+Trong PyTorch thường dùng `nn.LayerNorm` thì nó dùng z-score normalization.
+
+### Multi-Head Self-Attention
+
+Đây là phần CỰC KỲ QUAN TRỌNG.
+
+**Problem**: Mình có 196 patches
+
+```
+Patch 1 = information about top-left image area
+Patch 2 = information about next image area
+Patch 50 = information about middle image area
+...
+```
+
+Mỗi patch ứng với một mảnh nhỏ của bức ảnh. Nhưng để hiểu được cả bức ảnh cần hiểu được *relationship* giữa các patch.
+
+Ví dụ ảnh chó: ear patch + eye patch + nose patch + body patch = dog
+
+--> Self attention: Cho phép mỗi patch ask question "Which other patches are important to me?".
+
+Ta có 197 patch tokens (1 CLS + 196 patch tokens) --> Với mỗi token ta có 3 vector $Q$ $K$ và $V$.
+
+| Vector | Human meaning |
+| :--- | :--- |
+| Query | What am I looking for? |
+| Key | What do I contain? |
+| Value | What information can I provide? |
+
+--> Với 1 ảnh có 197 token --> có 197 query vectors + 197 key vectors + 197 value vectors.
+
+$${\displaystyle \text{Attention}(Q,K,V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V}$$
+
+Trong đó $QK^T$ (tử số) được gọi là *attention score*.
+
+Sau đó áp dụng softmax vào để tính *attention_weights* = $\text{softmax}(\frac{QK^T}{\sqrt{d_k}})$
+
+Pre-LN Transformer block
