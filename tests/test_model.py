@@ -3,7 +3,10 @@ import torch
 from data.tokenizer import CaptionTokenizer
 from data.vocabulary import Vocabulary
 from data.collate import ImageCaptionCollator
-from models.text_embedding import TextEmbedding
+try:
+    from models._2_text_embedding import TextEmbedding
+except ImportError:
+    from models.text_embedding import TextEmbedding
 
 class TestRoleCComponents(unittest.TestCase):
     def setUp(self):
@@ -112,7 +115,10 @@ class TestRoleCComponents(unittest.TestCase):
         self.assertFalse(torch.isnan(embeddings).any())
 
     def test_image_captioning_transformer(self):
-        from models.image_captioning_transformer import ImageCaptioningTransformer
+        try:
+            from models._0_image_captioning_transformer import ImageCaptioningTransformer
+        except ImportError:
+            from models._0_image_captioning_half_transformer import ImageCaptioningTransformer
         model = ImageCaptioningTransformer(
             image_size=224,
             patch_size=16,

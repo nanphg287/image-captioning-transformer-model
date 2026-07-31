@@ -8,9 +8,9 @@ from torchvision.models import resnet50, ResNet50_Weights
 # Bypass SSL verification for torchvision model download
 ssl._create_default_https_context = ssl._create_unverified_context
 
-from models.language_modeling_head import LanguageModelingHead
-from models.text_embedding import TextEmbedding
-from models.text_transformer_decoder import TextTransformerDecoder
+from models._4_0_language_modeling_head import LanguageModelingHead
+from models._2_text_embedding import TextEmbedding
+from models._3_0_text_transformer_decoder import TextTransformerDecoder
 
 
 class ImageCaptioningTransformer(nn.Module):
