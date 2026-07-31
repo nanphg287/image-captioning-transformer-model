@@ -4,10 +4,10 @@ import torch
 import torch.nn as nn
 
 from config import Config
-from models.multi_head_output_projection import MultiHeadOutputProjection
-from models.scaled_dot_product_attention import ScaledDotProductAttention
-from models.vit_encoder_feed_forward import ViTEncoderFeedForward
-from models.multihead_qkv_projection import MultiHeadQKVProjection
+from models._1_3_multi_head_output_projection import MultiHeadOutputProjection
+from models._1_2_scaled_dot_product_attention import ScaledDotProductAttention
+from models._1_4_vit_encoder_feed_forward import ViTEncoderFeedForward
+from models._1_1_multihead_qkv_projection import MultiHeadQKVProjection
 
 
 class VisionTransformerEncoderBlock(nn.Module):
@@ -146,7 +146,7 @@ class VisionTransformerEncoder(nn.Module):
             d_ff: int = Config.d_ff,
             num_layers: int = Config.num_encoder_layers,
             dropout: float = Config.attention_dropout,
-            layer_norm_eps: float = Config.eps
+            layer_norm_eps: float = Config.layer_norm_eps
     ):
         super().__init__()
 

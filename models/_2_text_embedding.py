@@ -41,7 +41,7 @@ class TextEmbedding(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         # Scale token embedding theo kiến trúc Transformer.
-        self.embedding_scale = math.sqrt(d_model)
+        self.embedding_scale = 1.0
 
         self.reset_parameters()
 

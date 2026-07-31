@@ -12,14 +12,11 @@ from torch.utils.data import DataLoader
 from config import Config
 from data.collate import ImageCaptionCollator
 from data.image_caption_dataset import ImageCaptionDataset
-from data.prepare_flicrk8k_datasets import prepare_dataset
-from data.resize_image import resize_image
-from data.split_dataset import split_dataset
 from data.tokenizer import CaptionTokenizer
 from data.vocabulary import Vocabulary
-from models.image_captioning_transformer import ImageCaptioningTransformer
+from models._0_image_captioning_half_transformer import ImageCaptioningHalfTransformer
+from models._0_image_captioning_transformer import ImageCaptioningTransformer
 
-RUN_DATA_PREPARATION = False
 NUM_WORKERS = 4
 RANDOM_SEED = 42
 
@@ -31,15 +28,6 @@ def get_device() -> torch.device:
         return torch.device("mps")
 
     return torch.device("cpu")
-
-
-def prepare_training_data() -> None:
-    if not RUN_DATA_PREPARATION:
-        return
-
-    prepare_dataset()
-    split_dataset()
-    resize_image()
 
 
 def create_or_load_vocabulary() -> Vocabulary:
@@ -175,6 +163,78 @@ def save_checkpoint(
     return checkpoint_path
 
 
+def create_validation_dataloader(
+        device: torch.device,
+        vocabulary: Vocabulary
+) -> DataLoader:
+    validation_dataset = ImageCaptionDataset(
+        json_path=Config.validation_data_file,
+        vocabulary=vocabulary,
+        max_caption_length=Config.max_caption_length
+    )
+
+    collator = ImageCaptionCollator(pad_token_id=vocabulary.pad_token_id)
+
+    return DataLoader(
+        dataset=validation_dataset,
+        batch_size=Config.batch_size,
+        shuffle=False,
+        num_workers=NUM_WORKERS,
+        pin_memory=device.type == "cuda",
+        persistent_workers=NUM_WORKERS > 0,
+        drop_last=False,
+        collate_fn=collator
+    )
+
+
+@torch.inference_mode()
+def validate_one_epoch(
+        model: ImageCaptioningTransformer,
+        validation_dataloader: DataLoader,
+        criterion: nn.Module,
+        device: torch.device,
+        pad_token_id: int
+) -> float:
+    model.eval()
+
+    total_loss = 0.0
+    total_valid_tokens = 0
+
+    for batch in validation_dataloader:
+        images = batch["images"].to(device=device, non_blocking=True)
+
+        caption_ids = batch["caption_ids"].to(device=device, non_blocking=True)
+
+        caption_padding_mask = batch[
+            "caption_padding_mask"
+        ].to(
+            device=device,
+            non_blocking=True
+        )
+
+        decoder_input_ids = caption_ids[:, :-1]
+        decoder_target_ids = caption_ids[:, 1:]
+        decoder_padding_mask = caption_padding_mask[:, :-1]
+
+        logits = model(images=images, decoder_input_ids=decoder_input_ids, decoder_padding_mask=decoder_padding_mask)
+
+        vocabulary_size = logits.shape[-1]
+
+        loss = criterion(logits.reshape(-1, vocabulary_size), decoder_target_ids.reshape(-1))
+
+        valid_token_count = (decoder_target_ids != pad_token_id).sum().item()
+
+        total_loss += loss.item() * valid_token_count
+        total_valid_tokens += valid_token_count
+
+    if total_valid_tokens == 0:
+        raise RuntimeError(
+            "Validation dataset không có token hợp lệ."
+        )
+
+    return total_loss / total_valid_tokens
+
+
 def main() -> None:
     # --------------------------------------------------
     # Random seed.
@@ -187,7 +247,6 @@ def main() -> None:
     # --------------------------------------------------
     # Dataset và device.
     # --------------------------------------------------
-    prepare_training_data()
     device = get_device()
 
     print(f"Device: {device}")
@@ -218,7 +277,6 @@ def main() -> None:
         d_model=Config.d_model,
         num_heads=Config.num_heads,
         d_ff=Config.d_ff,
-        num_encoder_layers=Config.num_encoder_layers,
         num_decoder_layers=Config.num_decoder_layers,
         dropout=0.1,
         layer_norm_eps=1e-6
@@ -245,6 +303,13 @@ def main() -> None:
     # --------------------------------------------------
     print("\n===== BẮT ĐẦU HUẤN LUYỆN =====")
 
+    validation_dataloader = create_validation_dataloader(
+        device=device,
+        vocabulary=vocabulary
+    )
+
+    best_validation_loss = float("inf")
+
     for epoch in range(1, Config.num_epochs + 1):
         average_loss = train_one_epoch(
             model=model,
@@ -256,195 +321,30 @@ def main() -> None:
             epoch=epoch
         )
 
-        checkpoint_path = save_checkpoint(
+        validation_loss = validate_one_epoch(
             model=model,
-            optimizer=optimizer,
-            epoch=epoch,
-            average_loss=average_loss,
-            vocabulary_size=vocabulary_size
+            validation_dataloader=validation_dataloader,
+            criterion=criterion,
+            device=device,
+            pad_token_id=vocabulary.pad_token_id
         )
 
-        print(f"Epoch {epoch:02d} hoàn thành | Average Loss: {average_loss:.4f}")
+        checkpoint_path = ""
+        if validation_loss < best_validation_loss:
+            best_validation_loss = validation_loss
+
+            checkpoint_path = save_checkpoint(
+                model=model,
+                optimizer=optimizer,
+                epoch=epoch,
+                average_loss=validation_loss,
+                vocabulary_size=len(vocabulary)
+            )
+
+        print(f"Epoch {epoch:02d} hoàn thành | Average Loss: {average_loss:.4f} | Validation Loss: {validation_loss:.4f}")
         print(f"Checkpoint: {checkpoint_path}")
 
     print("\n===== HUẤN LUYỆN HOÀN THÀNH =====")
-
-    # # --------------------------------------------------
-    # # Bước 6: Tính số patch.
-    # # --------------------------------------------------
-    # patches_per_side = Config.image_size // Config.patch_size
-    #
-    # num_patches = patches_per_side ** 2
-    #
-    # # --------------------------------------------------
-    # # Bước 7: Khởi tạo Patch Embedding.
-    # # --------------------------------------------------
-    # patch_embedding = PatchEmbedding(in_channels=3).to(device)
-    #
-    # # --------------------------------------------------
-    # # Bước 8: Khởi tạo Image Positional Embedding.
-    # # --------------------------------------------------
-    # positional_embedding = PositionalEmbedding(num_patches=num_patches).to(device)
-    #
-    # # --------------------------------------------------
-    # # Bước 9: Khởi tạo Vision Transformer Encoder.
-    # # --------------------------------------------------
-    # vision_transformer_encoder = VisionTransformerEncoder().to(device)
-    #
-    # # --------------------------------------------------
-    # # Bước 10: Text Embedding.
-    # #
-    # # Decoder input IDs:
-    # # [B, sequence_length]
-    # #
-    # # Text embeddings:
-    # # [B, sequence_length, d_model]
-    # # --------------------------------------------------
-    # text_embedding = TextEmbedding(
-    #     vocabulary_size=vocabulary_size,
-    #     d_model=Config.d_model,
-    #     max_sequence_length=(
-    #         Config.max_caption_length
-    #     ),
-    #     pad_token_id=vocabulary.pad_token_id,
-    #     dropout=0.1
-    # ).to(device)
-    #
-    # # --------------------------------------------------
-    # # Bước 9: Text Transformer Decoder.
-    # # --------------------------------------------------
-    # text_transformer_decoder = TextTransformerDecoder(
-    #     d_model=Config.d_model,
-    #     num_heads=Config.num_heads,
-    #     d_ff=Config.d_ff,
-    #     num_layers=Config.num_decoder_layers,
-    #     dropout=0.1,
-    #     layer_norm_eps=1e-6
-    # ).to(device)
-    #
-    # # --------------------------------------------------
-    # # Bước 10: Language Modeling Head.
-    # # --------------------------------------------------
-    # language_modeling_head = LanguageModelingHead(d_model=Config.d_model, vocabulary_size=vocabulary_size).to(device)
-    #
-    # # --------------------------------------------------
-    # # Bước 11: Cross-Entropy Loss.
-    # #
-    # # PAD token không tham gia tính loss.
-    # # --------------------------------------------------
-    # criterion = nn.CrossEntropyLoss(ignore_index=vocabulary.pad_token_id)
-    #
-    # patch_embedding.train()
-    # positional_embedding.train()
-    # vision_transformer_encoder.train()
-    # text_embedding.train()
-    # text_transformer_decoder.train()
-    # language_modeling_head.train()
-    #
-    # # --------------------------------------------------
-    # # Bước 11: Lấy một batch.
-    # # --------------------------------------------------
-    # batch = next(iter(train_dataloader))
-    #
-    # images = batch["images"].to(device=device, non_blocking=True)
-    #
-    # caption_ids = batch["caption_ids"].to(device=device, non_blocking=True)
-    #
-    # caption_padding_mask = (
-    #     batch["caption_padding_mask"].to(device=device, non_blocking=True)
-    # )
-    #
-    # captions = batch["captions"]
-    # filenames = batch["filenames"]
-    #
-    # # --------------------------------------------------
-    # # Bước 12: Tạo Decoder Input và Target.
-    # # --------------------------------------------------
-    # decoder_input_ids = caption_ids[:, :-1]
-    # decoder_target_ids = caption_ids[:, 1:]
-    #
-    # decoder_padding_mask = (caption_padding_mask[:, :-1])
-    #
-    # # --------------------------------------------------
-    # # Bước 13: Patch Embedding.
-    # # --------------------------------------------------
-    # patch_tokens = patch_embedding(images)
-    #
-    # # --------------------------------------------------
-    # # Bước 14: Image Positional Embedding.
-    # # --------------------------------------------------
-    # image_tokens = positional_embedding(patch_tokens)
-    #
-    # # --------------------------------------------------
-    # # Bước 15: Vision Transformer Encoder.
-    # # --------------------------------------------------
-    # visual_features = vision_transformer_encoder(image_tokens)
-    #
-    # # --------------------------------------------------
-    # # Bước 16: Text Embedding và Positional Embedding.
-    # #
-    # # [B, L] -> [B, L, d_model]
-    # # --------------------------------------------------
-    # text_embeddings = text_embedding(decoder_input_ids)
-    #
-    # # --------------------------------------------------
-    # # Bước 14: Text Transformer Decoder.
-    # # --------------------------------------------------
-    # decoder_features = text_transformer_decoder(
-    #     text_embeddings=text_embeddings,
-    #     visual_features=visual_features,
-    #     padding_mask=decoder_padding_mask
-    # )
-    #
-    # # --------------------------------------------------
-    # # Bước 17: Language Modeling Head.
-    # #
-    # # [B,L,512] -> [B,L,vocabulary_size]
-    # # --------------------------------------------------
-    # logits = language_modeling_head(decoder_features)
-    #
-    # # --------------------------------------------------
-    # # Bước 18: Cross-Entropy Loss.
-    # #
-    # # Logits:
-    # # [B,L,V] -> [B*L,V]
-    # #
-    # # Targets:
-    # # [B,L] -> [B*L]
-    # # --------------------------------------------------
-    # loss = criterion(
-    #     logits.reshape(-1, vocabulary_size),
-    #     decoder_target_ids.reshape(-1)
-    # )
-    #
-    # # --------------------------------------------------
-    # # Kết quả hiện tại.
-    # # --------------------------------------------------
-    # print("\n===== BATCH =====")
-    # print(f"Filename: {filenames[0]}")
-    # print(f"Caption: {captions[0]}")
-    #
-    # print("\n===== IMAGE ENCODER =====")
-    # print(f"Images: {images.shape}")
-    # print(f"Patch tokens: {patch_tokens.shape}")
-    # print(f"Image tokens: {image_tokens.shape}")
-    # print(f"Visual features: {visual_features.shape}")
-    #
-    # print("\n===== TEXT DATA =====")
-    # print(f"Caption IDs: {caption_ids.shape}")
-    # print(f"Decoder input IDs: {decoder_input_ids.shape}")
-    # print(f"Decoder target IDs: {decoder_target_ids.shape}")
-    # print(f"Decoder padding mask: {decoder_padding_mask.shape}")
-    #
-    # print("\n===== TEXT EMBEDDING =====")
-    # print(f"Text embeddings: {text_embeddings.shape}")
-    #
-    # print("\n===== TEXT TRANSFORMER DECODER =====")
-    # print(f"Decoder features: "f"{decoder_features.shape}")
-    #
-    # print("\n===== LANGUAGE MODELING =====")
-    # print(f"Logits: {logits.shape}")
-    # print(f"Loss: {loss.item():.6f}")
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ class PositionalEmbedding(nn.Module):
         # nn.Embedding(num_patches, d_model): bảng tra cứu, mỗi vị trí patch
         # (0, 1, 2, ..., 195) có 1 vector d_model chiều RIÊNG, học được qua train
         self.position_embedding_table = nn.Embedding(num_patches, d_model)
+        nn.init.trunc_normal_(self.position_embedding_table.weight, std=0.02)
+        self.dropout = nn.Dropout(Config.attention_dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         _, num_patches, d_model = x.shape

@@ -35,7 +35,6 @@ class Config:
     test_data_file: Path = TEST_DATA_FILE
     vocabulary_file: Path = VOCABULARY_FILE
     checkpoint_dir: Path = PROJECT_ROOT / "checkpoints"
-    checkpoint_path = checkpoint_dir / "image_captioning_epoch_030.pt"
 
     image_size: int = 224
     patch_size: int = 16
@@ -44,16 +43,16 @@ class Config:
     # Conv stem thay cho patchify tuyen tinh (them locality bias cho ViT).
     # 4 lan stride-2: 224 -> 112 -> 56 -> 28 -> 14  => 196 token, giu nguyen so token.
     use_conv_stem: bool = True
-    conv_stem_channels: tuple[int, ...] = (32, 64, 128, 256)
+    conv_stem_channels: tuple[int, ...] = (48, 96, 192, 384)
 
     # ------------------------------------------------------------------
     # Transformer  (THU NHO: 38.1M -> 12.0M tham so)
     # ------------------------------------------------------------------
-    d_model: int = 256
-    num_heads: int = 4  # head_dim = 256 / 4 = 64
-    d_ff: int = 1024
-    num_encoder_layers: int = 4
-    num_decoder_layers: int = 4
+    d_model: int = 384
+    num_heads: int = 6  # head_dim = 384 / 6 = 64
+    d_ff: int = 1536
+    num_encoder_layers: int = 6
+    num_decoder_layers: int = 6
 
     dropout: float = 0.1  # dropout chung (residual, FFN, embedding)
     attention_dropout: float = 0.1  # dropout rieng tren attention weights
@@ -68,7 +67,7 @@ class Config:
     # Caption
     # ------------------------------------------------------------------
     max_caption_length: int = 40
-    min_word_frequency: int = 2
+    min_word_frequency: int = 3
 
     # ------------------------------------------------------------------
     # Augmentation  (nguon "du lieu them" duy nhat khi train from scratch)
@@ -86,9 +85,9 @@ class Config:
     # Training
     # ------------------------------------------------------------------
     batch_size: int = 32
-    num_epochs: int = 60
+    num_epochs: int = 30
     learning_rate: float = 3e-4  # dung KEM warmup ben duoi
-    warmup_steps: int = 1000  # ~1 epoch. AdamW betas=(0.9,0.98) BAT BUOC phai co warmup.
+    warmup_steps: int = 2500  # ~1 epoch. AdamW betas=(0.9,0.98) BAT BUOC phai co warmup.
     weight_decay: float = 0.05  # ap dung CHI cho tensor ndim >= 2, khong ap len norm/bias/embedding
     label_smoothing: float = 0.1
     max_grad_norm: float = 1.0  # da bo field trung `gradient_clip_norm`

@@ -5,7 +5,7 @@ import math
 import torch
 import torch.nn as nn
 
-from models.multi_head_output_projection import MultiHeadOutputProjection
+from models._1_3_multi_head_output_projection import MultiHeadOutputProjection
 
 
 class CrossAttention(nn.Module):

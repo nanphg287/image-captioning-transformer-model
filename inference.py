@@ -12,7 +12,7 @@ from config import Config
 from data.image_caption_dataset import IMAGE_TRANSFORM
 from data.tokenizer import CaptionTokenizer
 from data.vocabulary import Vocabulary
-from models.image_captioning_transformer import (
+from models._0_image_captioning_transformer import (
     ImageCaptioningTransformer
 )
 

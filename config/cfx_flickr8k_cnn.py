@@ -35,7 +35,6 @@ class Config:
     test_data_file: Path = TEST_DATA_FILE
     vocabulary_file: Path = VOCABULARY_FILE
     checkpoint_dir: Path = PROJECT_ROOT / "checkpoints"
-    checkpoint_path = checkpoint_dir / "image_captioning_epoch_030.pt"
 
     image_size: int = 224
     patch_size: int = 16

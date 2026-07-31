@@ -3,11 +3,11 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from models.cross_attention import CrossAttention
-from models.masked_multi_head_self_attention import (
+from models._3_2_cross_attention import CrossAttention
+from models._3_1_masked_multi_head_self_attention import (
     MaskedMultiHeadSelfAttention
 )
-from models.text_decoder_feed_forward import (
+from models._3_3_text_decoder_feed_forward import (
     TextDecoderFeedForward
 )
 

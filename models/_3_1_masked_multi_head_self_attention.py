@@ -5,8 +5,8 @@ import math
 import torch
 import torch.nn as nn
 
-from models.multi_head_output_projection import MultiHeadOutputProjection
-from models.multihead_qkv_projection import MultiHeadQKVProjection
+from models._1_3_multi_head_output_projection import MultiHeadOutputProjection
+from models._1_1_multihead_qkv_projection import MultiHeadQKVProjection
 
 
 class MaskedMultiHeadSelfAttention(nn.Module):

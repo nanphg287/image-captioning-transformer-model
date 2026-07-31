@@ -64,6 +64,22 @@ class PatchEmbedding(nn.Module):
         return embeddings
 
 
+class ConvStem(nn.Module):
+    """224x224 -> 14x14 = 196 token, mỗi token có receptive field chồng lấn."""
+    def __init__(self, d_model=256, ch=(32, 64, 128, 256)):
+        super().__init__()
+        layers, c_in = [], 3
+        for c in ch:                       # 4 lần stride-2: 224->112->56->28->14
+            layers += [nn.Conv2d(c_in, c, 3, stride=2, padding=1, bias=False),
+                       nn.BatchNorm2d(c), nn.GELU()]
+            c_in = c
+        layers += [nn.Conv2d(c_in, d_model, 1)]
+        self.stem = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.stem(x).flatten(2).transpose(1, 2)   # [B, 196, d_model]
+
+
 if __name__ == "__main__":
     dummy_image = torch.randn(1, 3, 224, 224)  # giả lập batch 1 ảnh đã resize
 
